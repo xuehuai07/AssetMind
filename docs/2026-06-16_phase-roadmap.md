@@ -11,8 +11,8 @@
 
 | 阶段 | 文档 | 目标 | 主要验收点 |
 | --- | --- | --- | --- |
-| Phase 01 | `docs/2026-06-16_phase-01_foundation.md` | 初始化工程骨架和基础设计系统 | Next.js 可启动，Tailwind 生效，基础布局可展示 |
-| Phase 02 | `docs/2026-06-16_phase-02_assets-api.md` | 建立知识资产数据层和 API | 初始资产可读取，新增资产可持久化到 JSON |
+| Phase 01 | `docs/2026-06-16_phase-01_foundation.md` | 初始化工程骨架和基础设计系统 | 已完成：Next.js 可启动，Tailwind 生效，基础布局可展示 |
+| Phase 02 | `docs/2026-06-16_phase-02_assets-api.md` | 建立知识资产数据层和 API | 已完成：初始资产可读取，新增资产可持久化到 JSON |
 | Phase 03 | `docs/2026-06-16_phase-03_retrieval.md` | 实现可解释检索链路 | 搜索返回 top 3、score、snippet、matchedTerms |
 | Phase 04 | `docs/2026-06-16_phase-04_agent-answer.md` | 实现 Agent 问答和 Provider 边界 | `/api/ask` 返回答案、引用和 Trace |
 | Phase 05 | `docs/2026-06-16_phase-05_workbench-ui.md` | 打磨完整工作台 UI 和交互 | 三栏工作台、新增面板、状态反馈完整 |

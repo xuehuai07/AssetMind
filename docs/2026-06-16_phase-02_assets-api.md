@@ -70,4 +70,27 @@
 
 ## Implementation result
 
-待完成后补充。
+已完成。
+
+- 新增 `KnowledgeAsset`、`CreateKnowledgeAssetInput`、API 成功和错误响应类型。
+- 新增 `data/knowledge-assets.json`，包含题目要求的 3 条初始资产。
+- 新增资产存储封装，集中处理 JSON 读取、schema 校验、新增写入和输入清洗。
+- 新增 `GET /api/assets` 和 `POST /api/assets`，运行在 Node.js runtime。
+- 新增 `ASSETMIND_ASSETS_FILE_NAME` 测试覆盖点，用于 API 验证时写入 `data/` 内的测试 JSON 文件，默认运行仍使用 `data/knowledge-assets.json`。
+- 首页左侧改为读取真实资产数据，展示标题、正文摘要和 tags。
+- 新增 `.gitattributes`，固定文本文件 LF 策略，减少 Windows 环境换行噪音。
+
+验证结果：
+
+- `npm run lint` 通过。
+- `npm run build` 通过。
+- 本地 dev server 下 `GET /api/assets` 返回 3 条初始资产。
+- 使用临时 JSON 文件验证 `POST /api/assets` 成功新增资产，新增后 `GET /api/assets` 返回 4 条。
+- 验证过程中正式 `data/knowledge-assets.json` 仍保持 3 条 seed 数据。
+- 空 title 的 `POST /api/assets` 返回 400。
+
+自我审查：
+
+- 阶段边界符合 Phase 02：实现了资产数据层和 API，没有实现检索、Agent 问答或完整前端表单。
+- API 返回保持 `{ data }` / `{ error }` 结构，便于后续阶段复用。
+- 当前 JSON 写入仍未处理并发冲突，符合本地演示边界；README 需要在 Phase 06 明确说明。
