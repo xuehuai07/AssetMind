@@ -1,6 +1,7 @@
 import {
   DEFAULT_DEEPSEEK_MODEL,
   generateDeepSeekAnswer,
+  generateDeepSeekGeneralAnswer,
   normalizeDeepSeekModel
 } from "@/lib/deepseek";
 import { normalizeText, searchKnowledgeAssets } from "@/lib/retrieval";
@@ -50,8 +51,36 @@ export async function answerQuestion(
   const gate = evaluateEvidenceGate(results);
 
   if (!gate.passed) {
+    if (options.apiKey) {
+      const model = normalizeDeepSeekModel(options.model);
+      const answer = await generateDeepSeekGeneralAnswer({
+        apiKey: options.apiKey,
+        model,
+        question
+      });
+
+      return {
+        answer,
+        citations: [],
+        results,
+        trace: createTrace({
+          question,
+          normalizedQuestion,
+          results,
+          answer,
+          gateSummary: gate.summary,
+          modelSummary: `资料库无匹配依据，已调用 DeepSeek ${model} 进行通用回答。`
+        }),
+        provider: {
+          name: "DeepSeek 通用回答",
+          mode: "deepseek-general",
+          model
+        }
+      };
+    }
+
     const answer =
-      "当前资料库没有足够依据回答这个问题。请先上传或新增与问题直接相关的参考资料，我不会基于猜测生成答案。";
+      "当前资料库没有足够依据回答这个问题，且尚未启用 DeepSeek。请在模型设置中输入并验证 Key，或先上传相关参考资料。";
 
     return {
       answer,
@@ -63,10 +92,10 @@ export async function answerQuestion(
         results,
         answer,
         gateSummary: gate.summary,
-        modelSummary: "证据不足，未调用大模型。"
+        modelSummary: "证据不足且未启用 DeepSeek，未调用大模型。"
       }),
       provider: {
-        name: "严格证据门禁",
+        name: "未启用模型",
         mode: "strict-no-evidence"
       }
     };

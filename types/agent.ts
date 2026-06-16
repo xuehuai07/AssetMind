@@ -39,7 +39,7 @@ export type AskResponse = {
   trace: AgentTrace;
   provider: {
     name: string;
-    mode: "mock" | "deepseek" | "strict-no-evidence";
+    mode: "mock" | "deepseek" | "deepseek-general" | "strict-no-evidence";
     model?: string;
   };
 };

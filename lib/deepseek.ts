@@ -96,6 +96,52 @@ export async function generateDeepSeekAnswer(input: {
   return content;
 }
 
+export async function generateDeepSeekGeneralAnswer(input: {
+  apiKey: string;
+  model: DeepSeekModel;
+  question: string;
+}): Promise<string> {
+  const response = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${input.apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: input.model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "你是一个通用 AI 助手。当前没有可用参考资料时，可以基于通用知识回答，但必须用简体中文，表达清楚、客观，不声称答案来自资料库或引用资料。"
+        },
+        {
+          role: "user",
+          content: input.question
+        }
+      ],
+      thinking: { type: "disabled" },
+      temperature: 0.4,
+      max_tokens: 900,
+      stream: false
+    }),
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new DeepSeekApiError(createDeepSeekStatusMessage(response.status));
+  }
+
+  const payload = (await response.json()) as DeepSeekChatResponse;
+  const content = payload.choices?.[0]?.message?.content?.trim();
+
+  if (!content) {
+    throw new DeepSeekApiError("DeepSeek 未返回有效回答。");
+  }
+
+  return content;
+}
+
 export function normalizeDeepSeekModel(value: unknown): DeepSeekModel {
   return value === "deepseek-v4-pro" ? "deepseek-v4-pro" : DEFAULT_DEEPSEEK_MODEL;
 }

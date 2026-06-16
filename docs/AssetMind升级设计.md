@@ -1,8 +1,8 @@
-# AssetMind 中国化 RAG 工作台升级设计
+# AssetMind RAG 工作台升级设计
 
 ## Goal
 
-将 AssetMind Workbench 从本地 Mock 演示升级为更适合中国用户使用的知识资产问答工作台，支持用户上传参考资料、输入 DeepSeek API Key 启用真实 AI 回答，并通过严格 RAG 门禁避免无依据编造。
+将 AssetMind Workbench 从本地 Mock 演示升级为更适合中国用户使用的知识资产问答工作台，支持用户上传参考资料、输入 DeepSeek API Key 启用真实 AI 回答；有资料时优先基于资料回答，无资料时允许 DeepSeek 进行通用回答。
 
 ## Scope
 
@@ -12,7 +12,7 @@
 - 上传资料解析为知识资产并写入本地 JSON。
 - 前端支持用户输入 DeepSeek API Key，验证成功后在当前浏览器会话中启用。
 - 问答链路保留引用、检索结果和 Agent Trace。
-- 无相关资料或相关度不足时严格返回无依据提示，不调用模型。
+- 无相关资料或相关度不足时，如果已启用 DeepSeek，则调用通用回答；如果未启用 DeepSeek，则提示配置 Key 或上传资料。
 - 清理重复阶段文档，保留核心文档。
 
 ## Non-goals
@@ -42,10 +42,10 @@
    - 新增上传解析模块，按扩展名和 MIME 类型校验文件。
    - 新增 `POST /api/assets/upload`，将解析文本写入本地 JSON。
 
-3. DeepSeek 与严格回答
+3. DeepSeek 与回答策略
    - 新增 DeepSeek 常量、Key 验证和 Chat Completion 调用。
    - 更新 Agent Provider：无 Key 时使用 Mock，有 Key 且证据充分时调用 DeepSeek。
-   - 设置最低证据分数门槛，门槛不满足时不调用模型。
+   - 设置最低证据分数门槛，门槛不满足时不使用资料引用；已启用 Key 时走通用 AI 回答。
    - Trace 只展示安全元数据，不展示 Key 或完整 Prompt。
 
 4. 前端体验
@@ -94,14 +94,14 @@
 - `git diff --check`
 - 手工验证上传 `.txt`、`.md`、`.pdf`、`.docx`。
 - 手工验证 Key 成功和失败状态。
-- 手工验证无证据问题不会调用模型并返回严格提示。
+- 手工验证无证据问题在有 Key 时返回通用 AI 回答，无 Key 时返回配置提示。
 - 手工验证中文 UI 在桌面和移动端无明显重叠。
 
 ## Acceptance criteria
 
 - 用户可以在中文界面中上传参考资料并立即用于检索和问答。
 - 用户输入 DeepSeek Key 验证成功后，可以基于已有资料得到 AI 回答。
-- 没有相关参考资料时，系统明确拒绝编造。
+- 没有相关参考资料时，系统不展示引用；已启用 DeepSeek 时可以进行通用 AI 回答。
 - Key 不被持久化。
 - UI 比原版更清晰、现代，并具备液态玻璃视觉特征。
 - 工程文件更清爽，重复阶段文档已清理。
@@ -116,7 +116,7 @@
 - docs 文件已改为中文文件名，并恢复六个阶段开发历程文档。
 - 完成 `.txt`、`.md`、`.pdf`、`.docx` 上传解析，上传内容会写入本地 JSON，并记录来源文件元数据。
 - 完成 DeepSeek Key 验证接口和真实问答 Provider，默认模型为 `deepseek-v4-flash`，支持切换 `deepseek-v4-pro`。
-- 完成严格 RAG 证据门禁，无相关资料或相关度不足时不调用大模型，并明确拒绝编造。
+- 完成资料证据门禁，有匹配资料时基于资料回答；无匹配资料且已启用 Key 时调用 DeepSeek 通用回答，引用为 0。
 - 完成 README 更新和重复阶段文档清理。
 - 验证通过：`npm run lint`、`npm run build`、`git diff --check`，以及基于临时测试数据文件的 API smoke test。
 - 未使用真实 DeepSeek Key 测试成功调用；Key 验证和真实模型调用需要用户提供有效 Key 后手工验证。

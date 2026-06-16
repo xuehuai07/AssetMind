@@ -35,9 +35,9 @@ const toolItems: Array<{
   label: string;
   mark: string;
 }> = [
-  { key: "model", label: "模型设置", mark: "M" },
-  { key: "upload", label: "上传参考资料", mark: "U" },
-  { key: "library", label: "资料库", mark: "L" },
+  { key: "model", label: "模型设置", mark: "AI" },
+  { key: "upload", label: "上传资料", mark: "+" },
+  { key: "library", label: "资料库", mark: "K" },
   { key: "manual", label: "手动补充", mark: "N" }
 ];
 
@@ -63,6 +63,7 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
     "Key 仅保存在当前页面会话，刷新后需要重新输入。"
   );
   const [question, setQuestion] = useState("");
+  const [lastQuestion, setLastQuestion] = useState("");
   const [askState, setAskState] = useState<RequestState>("idle");
   const [askError, setAskError] = useState("");
   const [answer, setAnswer] = useState<AskResponse | null>(null);
@@ -77,6 +78,7 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
 
   const activeResults = answer?.results ?? searchResults;
   const hasAi = modelEnabled && apiKey.trim().length > 0;
+  const conversationStarted = Boolean(lastQuestion) || askState === "loading";
 
   async function validateModelKey() {
     if (!apiKey.trim()) {
@@ -207,7 +209,9 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
   }
 
   async function submitQuestion() {
-    if (!question.trim()) {
+    const submittedQuestion = question.trim();
+
+    if (!submittedQuestion) {
       setAskState("error");
       setAskError("请输入问题。");
       return;
@@ -216,13 +220,14 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
     setAskState("loading");
     setAskError("");
     setShowEvidence(false);
+    setLastQuestion(submittedQuestion);
 
     try {
       const response = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          question,
+          question: submittedQuestion,
           apiKey: hasAi ? apiKey : undefined,
           model: selectedModel
         })
@@ -235,9 +240,10 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
 
       setAnswer(payload.data);
       setSearchResults(payload.data.results);
-      setSearchQuery(question);
+      setSearchQuery(submittedQuestion);
       setAskState("success");
       setSearchState("success");
+      setQuestion("");
     } catch (error) {
       setAskState("error");
       setAskError(error instanceof Error ? error.message : "智能问答失败。");
@@ -260,30 +266,38 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
   return (
     <main className="gemini-shell min-h-screen text-slate-950">
       <nav className="side-rail" aria-label="工作台工具">
-        <div className="brand-mark" aria-hidden="true" />
+        <div className="rail-brand">
+          <div className="brand-mark" aria-hidden="true" />
+          <span>AssetMind</span>
+        </div>
+        <button
+          className="rail-action"
+          onClick={() => {
+            setAnswer(null);
+            setLastQuestion("");
+            setQuestion("");
+            setShowEvidence(false);
+          }}
+          type="button"
+        >
+          <span className="rail-icon">+</span>
+          <span>发起新对话</span>
+        </button>
         <div className="rail-group">
           {toolItems.map((item) => (
             <button
               aria-label={item.label}
-              className={`rail-button ${activePanel === item.key ? "active" : ""}`}
+              className={`rail-action ${activePanel === item.key ? "active" : ""}`}
               key={item.key}
               onClick={() => setActivePanel(item.key)}
               title={item.label}
               type="button"
             >
-              {item.mark}
+              <span className="rail-icon">{item.mark}</span>
+              <span>{item.label}</span>
             </button>
           ))}
         </div>
-        <button
-          aria-label="模型设置"
-          className="rail-button mt-auto"
-          onClick={() => setActivePanel("model")}
-          title="模型设置"
-          type="button"
-        >
-          S
-        </button>
       </nav>
 
       <div className="top-status">
@@ -293,50 +307,63 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
 
       <section className="home-stage">
         <div className="home-glow" aria-hidden="true" />
-        <div className="home-content">
-          <p className="eyebrow text-center">AssetMind 智能资料库</p>
-          <h1 className="home-title">
-            嗨，我们进入正题吧
-          </h1>
-          <div className="sample-row" aria-label="示例问题">
-            {sampleQuestions.map((sample) => (
-              <button
-                className="prompt-chip"
-                key={sample}
-                onClick={() => setQuestion(sample)}
-                type="button"
-              >
-                {sample}
-              </button>
-            ))}
-          </div>
-
-          {answer ? (
-            <AnswerPanel
-              answer={answer}
-              activeResults={activeResults}
-              onSearch={submitSearch}
-              searchError={searchError}
-              searchQuery={searchQuery}
-              searchState={searchState}
-              setSearchQuery={setSearchQuery}
-              setShowEvidence={setShowEvidence}
-              showEvidence={showEvidence}
+        {!conversationStarted ? (
+          <div className="home-content">
+            <p className="eyebrow text-center">AssetMind 智能资料库</p>
+            <h1 className="home-title">
+              嗨，我们进入正题吧
+            </h1>
+            <QuestionComposer
+              askError={askError}
+              askState={askState}
+              hasAi={hasAi}
+              onAsk={() => void submitQuestion()}
+              onKeyDown={handleQuestionKeyDown}
+              question={question}
+              selectedModel={selectedModel}
+              setActivePanel={setActivePanel}
+              setQuestion={setQuestion}
             />
-          ) : null}
-
-          <QuestionComposer
-            askError={askError}
+            <div className="sample-row" aria-label="示例问题">
+              {sampleQuestions.map((sample) => (
+                <button
+                  className="prompt-chip"
+                  key={sample}
+                  onClick={() => setQuestion(sample)}
+                  type="button"
+                >
+                  {sample}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <ChatView
+            activeResults={activeResults}
+            answer={answer}
             askState={askState}
-            hasAi={hasAi}
-            onAsk={() => void submitQuestion()}
-            onKeyDown={handleQuestionKeyDown}
-            question={question}
-            selectedModel={selectedModel}
-            setActivePanel={setActivePanel}
-            setQuestion={setQuestion}
-          />
-        </div>
+            lastQuestion={lastQuestion}
+            onSearch={submitSearch}
+            searchError={searchError}
+            searchQuery={searchQuery}
+            searchState={searchState}
+            setSearchQuery={setSearchQuery}
+            setShowEvidence={setShowEvidence}
+            showEvidence={showEvidence}
+          >
+            <QuestionComposer
+              askError={askError}
+              askState={askState}
+              hasAi={hasAi}
+              onAsk={() => void submitQuestion()}
+              onKeyDown={handleQuestionKeyDown}
+              question={question}
+              selectedModel={selectedModel}
+              setActivePanel={setActivePanel}
+              setQuestion={setQuestion}
+            />
+          </ChatView>
+        )}
       </section>
 
       {activePanel ? (
@@ -444,6 +471,61 @@ function QuestionComposer({
   );
 }
 
+function ChatView({
+  activeResults,
+  answer,
+  askState,
+  children,
+  lastQuestion,
+  onSearch,
+  searchError,
+  searchQuery,
+  searchState,
+  setSearchQuery,
+  setShowEvidence,
+  showEvidence
+}: {
+  activeResults: SearchResult[];
+  answer: AskResponse | null;
+  askState: RequestState;
+  children: ReactNode;
+  lastQuestion: string;
+  onSearch: (event: FormEvent<HTMLFormElement>) => void;
+  searchError: string;
+  searchQuery: string;
+  searchState: RequestState;
+  setSearchQuery: (value: string) => void;
+  setShowEvidence: (value: boolean) => void;
+  showEvidence: boolean;
+}) {
+  return (
+    <div className="chat-layout">
+      <div className="chat-thread">
+        <div className="user-message">{lastQuestion}</div>
+        {askState === "loading" ? (
+          <div className="assistant-message loading-message">
+            正在思考...
+          </div>
+        ) : null}
+        {answer ? (
+          <AnswerPanel
+            activeResults={activeResults}
+            answer={answer}
+            onSearch={onSearch}
+            searchError={searchError}
+            searchQuery={searchQuery}
+            searchState={searchState}
+            setSearchQuery={setSearchQuery}
+            setShowEvidence={setShowEvidence}
+            showEvidence={showEvidence}
+          />
+        ) : null}
+      </div>
+      <div className="chat-composer-wrap">{children}</div>
+    </div>
+  );
+}
+
 function AnswerPanel({
   activeResults,
   answer,
@@ -478,7 +560,7 @@ function AnswerPanel({
           onClick={() => setShowEvidence(!showEvidence)}
           type="button"
         >
-          {showEvidence ? "收起证据检索" : "查看证据检索"}
+          {showEvidence ? "收起证据与 Trace" : "查看证据检索与 Agent Trace"}
         </button>
         <span className="text-sm text-slate-500">
           {providerLabel(answer)} · {answer.citations.length} 条引用
@@ -923,12 +1005,15 @@ function EmptyState({ title }: { title: string }) {
 }
 
 function providerLabel(answer: AskResponse): string {
-  if (answer.provider.mode === "deepseek") {
+  if (
+    answer.provider.mode === "deepseek" ||
+    answer.provider.mode === "deepseek-general"
+  ) {
     return answer.provider.model ?? "DeepSeek";
   }
 
   if (answer.provider.mode === "strict-no-evidence") {
-    return "证据不足";
+    return "未启用模型";
   }
 
   return "本地摘要";
