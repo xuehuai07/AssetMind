@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { FormEvent, KeyboardEvent } from "react";
+import type { ChangeEvent, FormEvent, KeyboardEvent, ReactNode } from "react";
 import type { AskResponse } from "@/types/agent";
 import type { KnowledgeAsset } from "@/types/assets";
 import type { SearchResult } from "@/types/retrieval";
@@ -11,6 +11,7 @@ type WorkbenchProps = {
 };
 
 type RequestState = "idle" | "loading" | "success" | "error";
+type ToolPanel = "model" | "upload" | "library" | "manual" | null;
 
 type AddAssetForm = {
   title: string;
@@ -24,9 +25,26 @@ const sampleQuestions = [
   "数字资产知识库沉淀哪些资料？"
 ];
 
+const modelOptions = [
+  { label: "Flash", value: "deepseek-v4-flash" },
+  { label: "Pro", value: "deepseek-v4-pro" }
+];
+
+const toolItems: Array<{
+  key: Exclude<ToolPanel, null>;
+  label: string;
+  mark: string;
+}> = [
+  { key: "model", label: "模型设置", mark: "M" },
+  { key: "upload", label: "上传参考资料", mark: "U" },
+  { key: "library", label: "资料库", mark: "L" },
+  { key: "manual", label: "手动补充", mark: "N" }
+];
+
 export function Workbench({ initialAssets }: WorkbenchProps) {
   const [assets, setAssets] = useState(initialAssets);
-  const [assetPanelOpen, setAssetPanelOpen] = useState(false);
+  const [activePanel, setActivePanel] = useState<ToolPanel>(null);
+  const [showEvidence, setShowEvidence] = useState(false);
   const [assetForm, setAssetForm] = useState<AddAssetForm>({
     title: "",
     content: "",
@@ -34,7 +52,17 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
   });
   const [assetState, setAssetState] = useState<RequestState>("idle");
   const [assetMessage, setAssetMessage] = useState("");
-  const [question, setQuestion] = useState("AIOS 支持哪些能力？");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadState, setUploadState] = useState<RequestState>("idle");
+  const [uploadMessage, setUploadMessage] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [selectedModel, setSelectedModel] = useState("deepseek-v4-flash");
+  const [modelEnabled, setModelEnabled] = useState(false);
+  const [modelState, setModelState] = useState<RequestState>("idle");
+  const [modelMessage, setModelMessage] = useState(
+    "Key 仅保存在当前页面会话，刷新后需要重新输入。"
+  );
+  const [question, setQuestion] = useState("");
   const [askState, setAskState] = useState<RequestState>("idle");
   const [askError, setAskError] = useState("");
   const [answer, setAnswer] = useState<AskResponse | null>(null);
@@ -48,7 +76,76 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
   }, [assets]);
 
   const activeResults = answer?.results ?? searchResults;
-  const noAnswer = askState === "success" && answer?.results.length === 0;
+  const hasAi = modelEnabled && apiKey.trim().length > 0;
+
+  async function validateModelKey() {
+    if (!apiKey.trim()) {
+      setModelEnabled(false);
+      setModelState("error");
+      setModelMessage("请输入 DeepSeek API Key。");
+      return;
+    }
+
+    setModelState("loading");
+    setModelMessage("正在验证 Key...");
+
+    try {
+      const response = await fetch("/api/llm/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Key 验证失败。");
+      }
+
+      setModelEnabled(true);
+      setModelState("success");
+      setModelMessage(`DeepSeek 已启用，可用模型 ${payload.data.models.length} 个。`);
+    } catch (error) {
+      setModelEnabled(false);
+      setModelState("error");
+      setModelMessage(error instanceof Error ? error.message : "Key 验证失败。");
+    }
+  }
+
+  async function submitUpload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!uploadFile) {
+      setUploadState("error");
+      setUploadMessage("请选择 txt、md、pdf 或 docx 文件。");
+      return;
+    }
+
+    setUploadState("loading");
+    setUploadMessage("正在解析并写入资料库...");
+
+    const formData = new FormData();
+    formData.append("file", uploadFile);
+
+    try {
+      const response = await fetch("/api/assets/upload", {
+        method: "POST",
+        body: formData
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "上传失败。");
+      }
+
+      setAssets((current) => [...current, payload.data]);
+      setUploadFile(null);
+      setUploadState("success");
+      setUploadMessage("参考资料已加入资料库，可立即用于问答。");
+    } catch (error) {
+      setUploadState("error");
+      setUploadMessage(error instanceof Error ? error.message : "上传失败。");
+    }
+  }
 
   async function submitAsset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -58,25 +155,22 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
     try {
       const response = await fetch("/api/assets", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(assetForm)
       });
       const payload = await response.json();
 
       if (!response.ok) {
-        throw new Error(payload.error ?? "新增资产失败。");
+        throw new Error(payload.error ?? "新增资料失败。");
       }
 
       setAssets((current) => [...current, payload.data]);
       setAssetForm({ title: "", content: "", tags: "" });
       setAssetState("success");
-      setAssetMessage("资产已写入本地 JSON。");
-      setAssetPanelOpen(false);
+      setAssetMessage("资料已写入本地知识库。");
     } catch (error) {
       setAssetState("error");
-      setAssetMessage(error instanceof Error ? error.message : "新增资产失败。");
+      setAssetMessage(error instanceof Error ? error.message : "新增资料失败。");
     }
   }
 
@@ -95,9 +189,7 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
     try {
       const response = await fetch("/api/search", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: searchQuery })
       });
       const payload = await response.json();
@@ -117,25 +209,28 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
   async function submitQuestion() {
     if (!question.trim()) {
       setAskState("error");
-      setAskError("Question is required.");
+      setAskError("请输入问题。");
       return;
     }
 
     setAskState("loading");
     setAskError("");
+    setShowEvidence(false);
 
     try {
       const response = await fetch("/api/ask", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ question })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question,
+          apiKey: hasAi ? apiKey : undefined,
+          model: selectedModel
+        })
       });
       const payload = await response.json();
 
       if (!response.ok) {
-        throw new Error(payload.error ?? "Agent 回答失败。");
+        throw new Error(payload.error ?? "智能问答失败。");
       }
 
       setAnswer(payload.data);
@@ -145,7 +240,7 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
       setSearchState("success");
     } catch (error) {
       setAskState("error");
-      setAskError(error instanceof Error ? error.message : "Agent 回答失败。");
+      setAskError(error instanceof Error ? error.message : "智能问答失败。");
     }
   }
 
@@ -156,29 +251,57 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
     }
   }
 
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    setUploadFile(event.target.files?.[0] ?? null);
+    setUploadMessage("");
+    setUploadState("idle");
+  }
+
   return (
-    <main className="min-h-screen px-4 py-4 text-ink-900 sm:px-5 lg:px-6">
-      <section className="mx-auto flex min-h-[calc(100vh-32px)] max-w-[1540px] flex-col overflow-hidden rounded-[8px] border border-line-200 bg-paper-50 shadow-[0_24px_80px_rgba(25,25,25,0.12)]">
-        <header className="flex flex-col gap-4 border-b border-line-200 bg-paper-50/95 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="font-serif text-2xl leading-tight text-ink-950">
-                AssetMind Workbench
-              </h1>
-              <span className="rounded-[8px] border border-line-200 bg-white px-2.5 py-1 text-xs font-semibold text-signal-600">
-                Mock RAG
-              </span>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-3 text-sm text-ink-600">
-              <span>{assets.length} assets</span>
-              <span>{tags.length} tags</span>
-              <span>{answer ? `${answer.results.length} retrieved` : "ready"}</span>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+    <main className="gemini-shell min-h-screen text-slate-950">
+      <nav className="side-rail" aria-label="工作台工具">
+        <div className="brand-mark" aria-hidden="true" />
+        <div className="rail-group">
+          {toolItems.map((item) => (
+            <button
+              aria-label={item.label}
+              className={`rail-button ${activePanel === item.key ? "active" : ""}`}
+              key={item.key}
+              onClick={() => setActivePanel(item.key)}
+              title={item.label}
+              type="button"
+            >
+              {item.mark}
+            </button>
+          ))}
+        </div>
+        <button
+          aria-label="模型设置"
+          className="rail-button mt-auto"
+          onClick={() => setActivePanel("model")}
+          title="模型设置"
+          type="button"
+        >
+          S
+        </button>
+      </nav>
+
+      <div className="top-status">
+        <span>{assets.length} 条资料</span>
+        <span>{hasAi ? "DeepSeek 已启用" : "本地摘要"}</span>
+      </div>
+
+      <section className="home-stage">
+        <div className="home-glow" aria-hidden="true" />
+        <div className="home-content">
+          <p className="eyebrow text-center">AssetMind 智能资料库</p>
+          <h1 className="home-title">
+            嗨，我们进入正题吧
+          </h1>
+          <div className="sample-row" aria-label="示例问题">
             {sampleQuestions.map((sample) => (
               <button
-                className="rounded-[8px] border border-line-200 bg-white px-3 py-2 text-sm text-ink-700 transition hover:border-line-300 hover:text-ink-950"
+                className="prompt-chip"
                 key={sample}
                 onClick={() => setQuestion(sample)}
                 type="button"
@@ -187,117 +310,432 @@ export function Workbench({ initialAssets }: WorkbenchProps) {
               </button>
             ))}
           </div>
-        </header>
 
-        <div className="grid flex-1 grid-cols-1 divide-y divide-line-200 xl:grid-cols-[320px_minmax(0,1fr)_360px] xl:divide-x xl:divide-y-0">
-          <aside className="bg-paper-100/70 p-4 lg:p-5">
-            <AssetLibrary
-              assets={assets}
-              onAddClick={() => setAssetPanelOpen(true)}
-              tags={tags}
+          {answer ? (
+            <AnswerPanel
+              answer={answer}
+              activeResults={activeResults}
+              onSearch={submitSearch}
+              searchError={searchError}
+              searchQuery={searchQuery}
+              searchState={searchState}
+              setSearchQuery={setSearchQuery}
+              setShowEvidence={setShowEvidence}
+              showEvidence={showEvidence}
             />
-          </aside>
+          ) : null}
 
-          <section className="min-w-0 bg-paper-50 p-4 lg:p-5">
-            <div className="grid gap-4">
-              <QuestionPanel
-                askError={askError}
-                askState={askState}
-                onAsk={() => void submitQuestion()}
-                onKeyDown={handleQuestionKeyDown}
-                question={question}
-                setQuestion={setQuestion}
-              />
-
-              <AnswerPanel answer={answer} noAnswer={noAnswer} />
-
-              <SearchPanel
-                activeResults={activeResults}
-                onSearch={submitSearch}
-                searchError={searchError}
-                searchQuery={searchQuery}
-                searchState={searchState}
-                setSearchQuery={setSearchQuery}
-              />
-            </div>
-          </section>
-
-          <aside className="bg-paper-100/70 p-4 lg:p-5">
-            <TracePanel answer={answer} />
-          </aside>
+          <QuestionComposer
+            askError={askError}
+            askState={askState}
+            hasAi={hasAi}
+            onAsk={() => void submitQuestion()}
+            onKeyDown={handleQuestionKeyDown}
+            question={question}
+            selectedModel={selectedModel}
+            setActivePanel={setActivePanel}
+            setQuestion={setQuestion}
+          />
         </div>
       </section>
 
-      {assetPanelOpen ? (
-        <AddAssetPanel
-          assetForm={assetForm}
-          assetMessage={assetMessage}
-          assetState={assetState}
-          onClose={() => setAssetPanelOpen(false)}
-          onSubmit={submitAsset}
-          setAssetForm={setAssetForm}
-        />
+      {activePanel ? (
+        <ToolDialog
+          onClose={() => setActivePanel(null)}
+          title={toolTitle(activePanel)}
+        >
+          {activePanel === "model" ? (
+            <ModelPanel
+              apiKey={apiKey}
+              modelEnabled={modelEnabled}
+              modelMessage={modelMessage}
+              modelState={modelState}
+              onValidate={() => void validateModelKey()}
+              selectedModel={selectedModel}
+              setApiKey={setApiKey}
+              setSelectedModel={setSelectedModel}
+            />
+          ) : null}
+          {activePanel === "upload" ? (
+            <UploadPanel
+              file={uploadFile}
+              message={uploadMessage}
+              onFileChange={handleFileChange}
+              onSubmit={submitUpload}
+              state={uploadState}
+            />
+          ) : null}
+          {activePanel === "library" ? (
+            <AssetLibrary assets={assets} tags={tags} />
+          ) : null}
+          {activePanel === "manual" ? (
+            <ManualAssetPanel
+              assetForm={assetForm}
+              assetMessage={assetMessage}
+              assetState={assetState}
+              onSubmit={submitAsset}
+              setAssetForm={setAssetForm}
+            />
+          ) : null}
+        </ToolDialog>
       ) : null}
     </main>
   );
 }
 
+function QuestionComposer({
+  askError,
+  askState,
+  hasAi,
+  onAsk,
+  onKeyDown,
+  question,
+  selectedModel,
+  setActivePanel,
+  setQuestion
+}: {
+  askError: string;
+  askState: RequestState;
+  hasAi: boolean;
+  onAsk: () => void;
+  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  question: string;
+  selectedModel: string;
+  setActivePanel: (panel: ToolPanel) => void;
+  setQuestion: (value: string) => void;
+}) {
+  return (
+    <div className="ask-composer">
+      <button
+        aria-label="上传参考资料"
+        className="composer-icon"
+        onClick={() => setActivePanel("upload")}
+        title="上传参考资料"
+        type="button"
+      >
+        +
+      </button>
+      <textarea
+        className="composer-input"
+        onChange={(event) => setQuestion(event.target.value)}
+        onKeyDown={onKeyDown}
+        placeholder="向 AssetMind 提问"
+        rows={1}
+        value={question}
+      />
+      <button
+        className="model-select"
+        onClick={() => setActivePanel("model")}
+        type="button"
+      >
+        {hasAi ? modelShortName(selectedModel) : "本地"}
+      </button>
+      <button
+        aria-label="发送"
+        className="send-button"
+        disabled={askState === "loading"}
+        onClick={onAsk}
+        type="button"
+      >
+        {askState === "loading" ? "..." : "↑"}
+      </button>
+      {askError ? <p className="composer-error">{askError}</p> : null}
+    </div>
+  );
+}
+
+function AnswerPanel({
+  activeResults,
+  answer,
+  onSearch,
+  searchError,
+  searchQuery,
+  searchState,
+  setSearchQuery,
+  setShowEvidence,
+  showEvidence
+}: {
+  activeResults: SearchResult[];
+  answer: AskResponse;
+  onSearch: (event: FormEvent<HTMLFormElement>) => void;
+  searchError: string;
+  searchQuery: string;
+  searchState: RequestState;
+  setSearchQuery: (value: string) => void;
+  setShowEvidence: (value: boolean) => void;
+  showEvidence: boolean;
+}) {
+  const strict = answer.provider.mode === "strict-no-evidence";
+
+  return (
+    <section className="answer-sheet">
+      <div className={strict ? "warning-answer" : "answer-box"}>
+        {answer.answer}
+      </div>
+      <div className="answer-actions">
+        <button
+          className="ghost-button"
+          onClick={() => setShowEvidence(!showEvidence)}
+          type="button"
+        >
+          {showEvidence ? "收起证据检索" : "查看证据检索"}
+        </button>
+        <span className="text-sm text-slate-500">
+          {providerLabel(answer)} · {answer.citations.length} 条引用
+        </span>
+      </div>
+      {showEvidence ? (
+        <EvidencePanel
+          activeResults={activeResults}
+          answer={answer}
+          onSearch={onSearch}
+          searchError={searchError}
+          searchQuery={searchQuery}
+          searchState={searchState}
+          setSearchQuery={setSearchQuery}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function EvidencePanel({
+  activeResults,
+  answer,
+  onSearch,
+  searchError,
+  searchQuery,
+  searchState,
+  setSearchQuery
+}: {
+  activeResults: SearchResult[];
+  answer: AskResponse;
+  onSearch: (event: FormEvent<HTMLFormElement>) => void;
+  searchError: string;
+  searchQuery: string;
+  searchState: RequestState;
+  setSearchQuery: (value: string) => void;
+}) {
+  return (
+    <div className="evidence-panel">
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <PanelTitle label="引用依据" meta={`${answer.citations.length} 条`} />
+          <div className="mt-3 grid gap-3">
+            {answer.citations.length === 0 ? (
+              <EmptyState title="本次没有可引用资料。" />
+            ) : (
+              answer.citations.map((citation, index) => (
+                <article className="glass-card p-4" key={citation.assetId}>
+                  <div className="text-xs font-semibold text-teal-700">
+                    引用 {index + 1}
+                  </div>
+                  <h3 className="mt-2 text-sm font-semibold text-slate-950">
+                    {citation.title}
+                  </h3>
+                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600">
+                    {citation.snippet}
+                  </p>
+                </article>
+              ))
+            )}
+          </div>
+        </div>
+        <TracePanel answer={answer} />
+      </div>
+
+      <div className="mt-4">
+        <PanelTitle label="证据检索" meta={`${activeResults.length} 条结果`} />
+        <form className="mt-3 flex flex-col gap-3 sm:flex-row" onSubmit={onSearch}>
+          <input
+            className="field min-h-11 flex-1"
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="检索资料库"
+            value={searchQuery}
+          />
+          <button
+            className="secondary-button min-w-24"
+            disabled={searchState === "loading"}
+            type="submit"
+          >
+            {searchState === "loading" ? "检索中..." : "检索"}
+          </button>
+        </form>
+        {searchError ? (
+          <p className="mt-3 text-sm text-amber-700">{searchError}</p>
+        ) : null}
+        <div className="mt-4 grid gap-3">
+          {searchState === "success" && activeResults.length === 0 ? (
+            <EmptyState title="没有匹配资料" />
+          ) : null}
+          {activeResults.map((result) => (
+            <article className="glass-card p-4" key={result.assetId}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-slate-950">
+                    {result.title}
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    {result.snippet}
+                  </p>
+                </div>
+                <span className="score-badge">{result.score.toFixed(2)}</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {result.matchedTerms.map((term) => (
+                  <span className="mini-chip" key={`${result.assetId}-${term}`}>
+                    {term}
+                  </span>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModelPanel({
+  apiKey,
+  modelEnabled,
+  modelMessage,
+  modelState,
+  onValidate,
+  selectedModel,
+  setApiKey,
+  setSelectedModel
+}: {
+  apiKey: string;
+  modelEnabled: boolean;
+  modelMessage: string;
+  modelState: RequestState;
+  onValidate: () => void;
+  selectedModel: string;
+  setApiKey: (value: string) => void;
+  setSelectedModel: (value: string) => void;
+}) {
+  return (
+    <section>
+      <PanelTitle label="DeepSeek" meta={modelEnabled ? "已启用" : "未启用"} />
+      <label className="mt-4 grid gap-2 text-sm font-medium text-slate-700">
+        API Key
+        <input
+          className="field"
+          onChange={(event) => setApiKey(event.target.value)}
+          placeholder="sk-..."
+          type="password"
+          value={apiKey}
+        />
+      </label>
+      <label className="mt-3 grid gap-2 text-sm font-medium text-slate-700">
+        模型
+        <select
+          className="field"
+          onChange={(event) => setSelectedModel(event.target.value)}
+          value={selectedModel}
+        >
+          {modelOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              DeepSeek V4 {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        className="primary-button mt-4 w-full"
+        disabled={modelState === "loading"}
+        onClick={onValidate}
+        type="button"
+      >
+        {modelState === "loading" ? "验证中..." : "验证并启用"}
+      </button>
+      <StatusLine message={modelMessage} state={modelState} />
+    </section>
+  );
+}
+
+function UploadPanel({
+  file,
+  message,
+  onFileChange,
+  onSubmit,
+  state
+}: {
+  file: File | null;
+  message: string;
+  onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  state: RequestState;
+}) {
+  return (
+    <section>
+      <PanelTitle label="上传参考资料" meta="txt / md / pdf / docx" />
+      <form className="mt-4 grid gap-3" onSubmit={onSubmit}>
+        <label className="upload-target">
+          <input
+            accept=".txt,.md,.pdf,.docx,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            className="sr-only"
+            onChange={onFileChange}
+            type="file"
+          />
+          <span className="text-sm font-semibold text-slate-950">
+            {file ? file.name : "选择参考资料"}
+          </span>
+          <span className="text-xs text-slate-500">单文件不超过 10MB</span>
+        </label>
+        <button
+          className="secondary-button"
+          disabled={state === "loading"}
+          type="submit"
+        >
+          {state === "loading" ? "解析中..." : "加入资料库"}
+        </button>
+      </form>
+      <StatusLine message={message || "上传后会立即参与检索和问答。"} state={state} />
+    </section>
+  );
+}
+
 function AssetLibrary({
   assets,
-  onAddClick,
   tags
 }: {
   assets: KnowledgeAsset[];
-  onAddClick: () => void;
   tags: string[];
 }) {
   return (
-    <div>
-      <div className="flex items-center justify-between gap-3">
-        <SectionLabel label="Asset Library" />
-        <button
-          className="rounded-[8px] bg-ink-950 px-3 py-2 text-sm font-semibold text-paper-50 transition hover:bg-ink-800"
-          onClick={onAddClick}
-          type="button"
-        >
-          Add asset
-        </button>
-      </div>
-
-      {tags.length > 0 ? (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {tags.map((tag) => (
-            <span
-              className="rounded-[8px] border border-line-200 bg-paper-50 px-2 py-1 text-xs text-ink-600"
-              key={tag}
-            >
+    <section>
+      <PanelTitle label="资料库" meta={`${assets.length} 条资料`} />
+      <div className="mt-4 flex flex-wrap gap-2">
+        {tags.length === 0 ? (
+          <span className="soft-chip">暂无标签</span>
+        ) : (
+          tags.map((tag) => (
+            <span className="soft-chip" key={tag}>
               {tag}
             </span>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="mt-5 space-y-3">
+          ))
+        )}
+      </div>
+      <div className="mt-4 grid max-h-[58vh] gap-3 overflow-y-auto pr-1">
         {assets.length === 0 ? (
-          <EmptyState title="No assets" />
+          <EmptyState title="资料库为空" />
         ) : (
           assets.map((asset) => (
-            <article
-              className="rounded-[8px] border border-line-200 bg-paper-50 p-4 transition hover:border-line-300 hover:bg-white"
-              key={asset.id}
-            >
-              <h2 className="text-sm font-semibold text-ink-950">
-                {asset.title}
-              </h2>
-              <p className="mt-2 line-clamp-3 text-sm leading-6 text-ink-600">
+            <article className="glass-card p-4" key={asset.id}>
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="text-sm font-semibold leading-6 text-slate-950">
+                  {asset.title}
+                </h2>
+                <span className="status-pill">{sourceLabel(asset)}</span>
+              </div>
+              <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600">
                 {asset.content}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {asset.tags.map((tag) => (
-                  <span
-                    className="rounded-[8px] bg-paper-100 px-2 py-1 text-xs text-ink-600"
-                    key={`${asset.id}-${tag}`}
-                  >
+                  <span className="mini-chip" key={`${asset.id}-${tag}`}>
                     {tag}
                   </span>
                 ))}
@@ -306,411 +744,209 @@ function AssetLibrary({
           ))
         )}
       </div>
-    </div>
-  );
-}
-
-function QuestionPanel({
-  askError,
-  askState,
-  onAsk,
-  onKeyDown,
-  question,
-  setQuestion
-}: {
-  askError: string;
-  askState: RequestState;
-  onAsk: () => void;
-  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  question: string;
-  setQuestion: (value: string) => void;
-}) {
-  return (
-    <section className="rounded-[8px] border border-line-200 bg-white p-4 lg:p-5">
-      <div className="flex items-center justify-between gap-3">
-        <SectionLabel label="Ask Agent" />
-        <StatusBadge state={askState} />
-      </div>
-      <textarea
-        className="mt-4 min-h-28 w-full resize-none rounded-[8px] border border-line-200 bg-paper-50 p-4 text-base leading-7 text-ink-900 outline-none transition placeholder:text-ink-500 focus:border-signal-500 focus:bg-white"
-        onChange={(event) => setQuestion(event.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder="AIOS 支持哪些能力？"
-        value={question}
-      />
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-ink-600">
-          {askError || "Ready"}
-        </p>
-        <button
-          className="rounded-[8px] bg-signal-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-signal-500 disabled:cursor-not-allowed disabled:opacity-55"
-          disabled={askState === "loading"}
-          onClick={onAsk}
-          type="button"
-        >
-          {askState === "loading" ? "Answering..." : "Ask"}
-        </button>
-      </div>
     </section>
   );
 }
 
-function AnswerPanel({
-  answer,
-  noAnswer
-}: {
-  answer: AskResponse | null;
-  noAnswer: boolean;
-}) {
-  return (
-    <section className="rounded-[8px] border border-line-200 bg-white p-4 lg:p-5">
-      <SectionLabel label="Answer" />
-      {!answer ? (
-        <EmptyState title="No answer yet" />
-      ) : (
-        <div className="mt-4">
-          <div
-            className={`rounded-[8px] border p-4 text-base leading-8 ${
-              noAnswer
-                ? "border-amber-500/40 bg-amber-500/10 text-ink-800"
-                : "border-line-200 bg-paper-50 text-ink-900"
-            }`}
-          >
-            {answer.answer}
-          </div>
+function TracePanel({ answer }: { answer: AskResponse }) {
+  const steps = answer.trace.steps;
+  const scores = answer.trace.scores;
 
-          <div className="mt-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-500">
-              Citations
+  return (
+    <section>
+      <PanelTitle label="运行轨迹" meta={providerLabel(answer)} />
+      <div className="mt-4 grid gap-4">
+        {steps.map((step, index) => (
+          <div className="flex gap-3" key={step.id}>
+            <div className="flex flex-col items-center">
+              <span className={`step-dot ${step.status}`}>{index + 1}</span>
+              {index < steps.length - 1 ? (
+                <span className="h-9 w-px bg-white/60" />
+              ) : null}
             </div>
-            {answer.citations.length === 0 ? (
-              <p className="mt-3 text-sm text-ink-600">
-                No citation available.
+            <div className="min-w-0 pb-2">
+              <div className="text-sm font-semibold text-slate-950">
+                {step.label}
+              </div>
+              <p className="mt-1 line-clamp-3 text-sm leading-6 text-slate-600">
+                {step.summary}
               </p>
-            ) : (
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                {answer.citations.map((citation, index) => (
-                  <article
-                    className="rounded-[8px] border border-line-200 bg-paper-50 p-3"
-                    key={citation.assetId}
-                  >
-                    <div className="text-xs font-semibold text-signal-600">
-                      Citation {index + 1}
-                    </div>
-                    <h3 className="mt-2 text-sm font-semibold text-ink-950">
-                      {citation.title}
-                    </h3>
-                    <p className="mt-2 line-clamp-3 text-sm leading-6 text-ink-600">
-                      {citation.snippet}
-                    </p>
-                  </article>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function SearchPanel({
-  activeResults,
-  onSearch,
-  searchError,
-  searchQuery,
-  searchState,
-  setSearchQuery
-}: {
-  activeResults: SearchResult[];
-  onSearch: (event: FormEvent<HTMLFormElement>) => void;
-  searchError: string;
-  searchQuery: string;
-  searchState: RequestState;
-  setSearchQuery: (value: string) => void;
-}) {
-  return (
-    <section className="rounded-[8px] border border-line-200 bg-white p-4 lg:p-5">
-      <div className="flex items-center justify-between gap-3">
-        <SectionLabel label="Retrieved Evidence" />
-        <StatusBadge state={searchState} />
-      </div>
-      <form className="mt-4 flex flex-col gap-3 sm:flex-row" onSubmit={onSearch}>
-        <input
-          className="min-h-10 flex-1 rounded-[8px] border border-line-200 bg-paper-50 px-3 text-sm text-ink-900 outline-none transition placeholder:text-ink-500 focus:border-signal-500 focus:bg-white"
-          onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="Search assets"
-          value={searchQuery}
-        />
-        <button
-          className="rounded-[8px] border border-line-300 bg-paper-50 px-4 py-2 text-sm font-semibold text-ink-900 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
-          disabled={searchState === "loading"}
-          type="submit"
-        >
-          {searchState === "loading" ? "Searching..." : "Search"}
-        </button>
-      </form>
-      {searchError ? (
-        <p className="mt-3 text-sm text-amber-500">{searchError}</p>
-      ) : null}
-
-      <div className="mt-4 space-y-3">
-        {searchState === "success" && activeResults.length === 0 ? (
-          <EmptyState title="No matching assets" />
-        ) : null}
-        {activeResults.map((result) => (
-          <article
-            className="rounded-[8px] border border-line-200 bg-paper-50 p-4"
-            key={result.assetId}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-sm font-semibold text-ink-950">
-                  {result.title}
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-ink-600">
-                  {result.snippet}
-                </p>
-              </div>
-              <span className="rounded-[8px] bg-signal-600 px-2 py-1 text-xs font-semibold text-white">
-                {result.score.toFixed(2)}
-              </span>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {result.matchedTerms.map((term) => (
-                <span
-                  className="rounded-[8px] border border-line-200 bg-white px-2 py-1 text-xs text-ink-600"
-                  key={`${result.assetId}-${term}`}
+          </div>
+        ))}
+        <div className="glass-card p-3">
+          <div className="eyebrow">相关度</div>
+          {scores.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-600">没有评分结果。</p>
+          ) : (
+            <div className="mt-3 grid gap-2">
+              {scores.map((score) => (
+                <div
+                  className="flex items-center justify-between gap-3 text-sm"
+                  key={score.assetId}
                 >
-                  {term}
-                </span>
+                  <span className="truncate text-slate-700">{score.title}</span>
+                  <span className="font-semibold text-slate-950">
+                    {score.score.toFixed(2)}
+                  </span>
+                </div>
               ))}
             </div>
-          </article>
-        ))}
+          )}
+        </div>
       </div>
     </section>
   );
 }
 
-function TracePanel({ answer }: { answer: AskResponse | null }) {
-  const steps = answer?.trace.steps ?? [];
-  const scores = answer?.trace.scores ?? [];
-
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-3">
-        <SectionLabel label="Agent Trace" />
-        {answer ? (
-          <span className="rounded-[8px] border border-line-200 bg-paper-50 px-2.5 py-1 text-xs font-semibold text-ink-600">
-            {answer.provider.mode}
-          </span>
-        ) : null}
-      </div>
-
-      {!answer ? (
-        <EmptyState title="Trace pending" />
-      ) : (
-        <div className="mt-5 space-y-5">
-          <div className="rounded-[8px] border border-line-200 bg-paper-50 p-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-500">
-              Query
-            </div>
-            <p className="mt-2 text-sm leading-6 text-ink-900">
-              {answer.trace.query}
-            </p>
-          </div>
-
-          <div className="space-y-4">
-            {steps.map((step, index) => (
-              <div className="flex gap-3" key={step.id}>
-                <div className="flex flex-col items-center">
-                  <div
-                    className={`grid h-7 w-7 place-items-center rounded-full border text-xs font-semibold ${
-                      step.status === "completed"
-                        ? "border-signal-500 bg-signal-600 text-white"
-                        : "border-line-300 bg-paper-50 text-ink-600"
-                    }`}
-                  >
-                    {index + 1}
-                  </div>
-                  {index < steps.length - 1 ? (
-                    <div className="h-12 w-px bg-line-200" />
-                  ) : null}
-                </div>
-                <div className="min-w-0 pb-2">
-                  <div className="text-sm font-semibold text-ink-950">
-                    {step.label}
-                  </div>
-                  <p className="mt-1 line-clamp-3 text-sm leading-6 text-ink-600">
-                    {step.summary}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="rounded-[8px] border border-line-200 bg-paper-50 p-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-500">
-              Scores
-            </div>
-            {scores.length === 0 ? (
-              <p className="mt-3 text-sm text-ink-600">No scores.</p>
-            ) : (
-              <div className="mt-3 space-y-2">
-                {scores.map((score) => (
-                  <div
-                    className="flex items-center justify-between gap-3 text-sm"
-                    key={score.assetId}
-                  >
-                    <span className="truncate text-ink-700">{score.title}</span>
-                    <span className="font-semibold text-ink-950">
-                      {score.score.toFixed(2)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AddAssetPanel({
+function ManualAssetPanel({
   assetForm,
   assetMessage,
   assetState,
-  onClose,
   onSubmit,
   setAssetForm
 }: {
   assetForm: AddAssetForm;
   assetMessage: string;
   assetState: RequestState;
-  onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   setAssetForm: (value: AddAssetForm) => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 bg-ink-950/30">
-      <div className="ml-auto flex h-full w-full max-w-xl flex-col border-l border-line-200 bg-paper-50 shadow-[0_24px_80px_rgba(25,25,25,0.22)]">
-        <div className="flex items-center justify-between gap-3 border-b border-line-200 px-5 py-4">
-          <div>
-            <SectionLabel label="New Asset" />
-            <h2 className="mt-2 text-xl font-semibold text-ink-950">
-              Add knowledge asset
-            </h2>
-          </div>
-          <button
-            className="rounded-[8px] border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-700 transition hover:text-ink-950"
-            onClick={onClose}
-            type="button"
-          >
-            Close
+    <section>
+      <PanelTitle label="手动补充" meta="快速录入" />
+      <form className="mt-4 grid gap-3" onSubmit={onSubmit}>
+        <input
+          className="field"
+          onChange={(event) =>
+            setAssetForm({ ...assetForm, title: event.target.value })
+          }
+          placeholder="资料标题"
+          value={assetForm.title}
+        />
+        <textarea
+          className="field min-h-32 resize-none p-3"
+          onChange={(event) =>
+            setAssetForm({ ...assetForm, content: event.target.value })
+          }
+          placeholder="正文内容"
+          value={assetForm.content}
+        />
+        <input
+          className="field"
+          onChange={(event) =>
+            setAssetForm({ ...assetForm, tags: event.target.value })
+          }
+          placeholder="标签，用逗号分隔"
+          value={assetForm.tags}
+        />
+        <button
+          className="secondary-button"
+          disabled={assetState === "loading"}
+          type="submit"
+        >
+          {assetState === "loading" ? "保存中..." : "保存资料"}
+        </button>
+      </form>
+      <StatusLine message={assetMessage || "适合录入短文本和临时知识。"} state={assetState} />
+    </section>
+  );
+}
+
+function ToolDialog({
+  children,
+  onClose,
+  title
+}: {
+  children: ReactNode;
+  onClose: () => void;
+  title: string;
+}) {
+  return (
+    <div className="tool-overlay">
+      <button
+        aria-label="关闭"
+        className="tool-backdrop"
+        onClick={onClose}
+        type="button"
+      />
+      <section className="tool-dialog">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+          <button className="close-button" onClick={onClose} type="button">
+            关闭
           </button>
         </div>
-        <form className="flex flex-1 flex-col gap-4 overflow-y-auto p-5" onSubmit={onSubmit}>
-          <label className="grid gap-2 text-sm font-semibold text-ink-800">
-            Title
-            <input
-              className="min-h-11 rounded-[8px] border border-line-200 bg-white px-3 text-sm font-normal text-ink-900 outline-none transition focus:border-signal-500"
-              onChange={(event) =>
-                setAssetForm({ ...assetForm, title: event.target.value })
-              }
-              placeholder="例如：客户成功案例"
-              value={assetForm.title}
-            />
-          </label>
-          <label className="grid gap-2 text-sm font-semibold text-ink-800">
-            Content
-            <textarea
-              className="min-h-44 resize-none rounded-[8px] border border-line-200 bg-white p-3 text-sm font-normal leading-6 text-ink-900 outline-none transition focus:border-signal-500"
-              onChange={(event) =>
-                setAssetForm({ ...assetForm, content: event.target.value })
-              }
-              placeholder="正文内容"
-              value={assetForm.content}
-            />
-          </label>
-          <label className="grid gap-2 text-sm font-semibold text-ink-800">
-            Tags
-            <input
-              className="min-h-11 rounded-[8px] border border-line-200 bg-white px-3 text-sm font-normal text-ink-900 outline-none transition focus:border-signal-500"
-              onChange={(event) =>
-                setAssetForm({ ...assetForm, tags: event.target.value })
-              }
-              placeholder="销售资料, 客户案例"
-              value={assetForm.tags}
-            />
-          </label>
-          {assetMessage ? (
-            <p
-              className={`rounded-[8px] border px-3 py-2 text-sm ${
-                assetState === "error"
-                  ? "border-amber-500/40 bg-amber-500/10 text-ink-800"
-                  : "border-signal-500/30 bg-signal-500/10 text-signal-600"
-              }`}
-            >
-              {assetMessage}
-            </p>
-          ) : null}
-          <div className="mt-auto flex justify-end gap-3 pt-3">
-            <button
-              className="rounded-[8px] border border-line-200 bg-white px-4 py-2 text-sm font-semibold text-ink-700 transition hover:text-ink-950"
-              onClick={onClose}
-              type="button"
-            >
-              Cancel
-            </button>
-            <button
-              className="rounded-[8px] bg-ink-950 px-4 py-2 text-sm font-semibold text-paper-50 transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-55"
-              disabled={assetState === "loading"}
-              type="submit"
-            >
-              {assetState === "loading" ? "Saving..." : "Save asset"}
-            </button>
-          </div>
-        </form>
-      </div>
+        {children}
+      </section>
     </div>
   );
 }
 
-function SectionLabel({ label }: { label: string }) {
+function PanelTitle({ label, meta }: { label: string; meta: string }) {
   return (
-    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-500">
-      {label}
+    <div className="flex items-center justify-between gap-3">
+      <h2 className="text-sm font-semibold text-slate-950">{label}</h2>
+      <span className="status-pill">{meta}</span>
     </div>
   );
 }
 
-function StatusBadge({ state }: { state: RequestState }) {
-  const label = {
-    idle: "idle",
-    loading: "loading",
-    success: "ready",
-    error: "error"
-  }[state];
-
+function StatusLine({
+  message,
+  state
+}: {
+  message: string;
+  state: RequestState;
+}) {
   return (
-    <span
-      className={`rounded-[8px] border px-2.5 py-1 text-xs font-semibold ${
+    <p
+      className={`mt-3 text-sm leading-6 ${
         state === "error"
-          ? "border-amber-500/40 bg-amber-500/10 text-amber-500"
-          : "border-line-200 bg-paper-50 text-ink-600"
+          ? "text-amber-800"
+          : state === "success"
+            ? "text-teal-700"
+            : "text-slate-600"
       }`}
     >
-      {label}
-    </span>
+      {message}
+    </p>
   );
 }
 
 function EmptyState({ title }: { title: string }) {
   return (
-    <div className="mt-4 rounded-[8px] border border-dashed border-line-300 bg-paper-50 p-4 text-sm text-ink-600">
+    <div className="rounded-[18px] border border-dashed border-white/70 bg-white/35 p-4 text-sm leading-6 text-slate-600">
       {title}
     </div>
   );
+}
+
+function providerLabel(answer: AskResponse): string {
+  if (answer.provider.mode === "deepseek") {
+    return answer.provider.model ?? "DeepSeek";
+  }
+
+  if (answer.provider.mode === "strict-no-evidence") {
+    return "证据不足";
+  }
+
+  return "本地摘要";
+}
+
+function sourceLabel(asset: KnowledgeAsset): string {
+  return asset.source?.type === "upload" ? "上传" : "录入";
+}
+
+function modelShortName(model: string): string {
+  return model === "deepseek-v4-pro" ? "Pro" : "Flash";
+}
+
+function toolTitle(panel: Exclude<ToolPanel, null>): string {
+  return {
+    model: "模型设置",
+    upload: "上传参考资料",
+    library: "资料库",
+    manual: "手动补充"
+  }[panel];
 }

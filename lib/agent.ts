@@ -1,3 +1,8 @@
+import {
+  DEFAULT_DEEPSEEK_MODEL,
+  generateDeepSeekAnswer,
+  normalizeDeepSeekModel
+} from "@/lib/deepseek";
 import { normalizeText, searchKnowledgeAssets } from "@/lib/retrieval";
 import type { KnowledgeAsset } from "@/types/assets";
 import type {
@@ -5,27 +10,17 @@ import type {
   AnswerProvider,
   AnswerProviderInput,
   AnswerProviderOutput,
+  AskOptions,
   AskResponse,
   Citation
 } from "@/types/agent";
 import type { SearchResult } from "@/types/retrieval";
 
+const MIN_EVIDENCE_SCORE = 0.2;
+
 export const mockAnswerProvider: AnswerProvider = {
   async generateAnswer(input: AnswerProviderInput): Promise<AnswerProviderOutput> {
     const groundedResults = selectGroundedResults(input.results);
-
-    if (groundedResults.length === 0) {
-      return {
-        answer:
-          "当前知识资产中没有检索到足够相关的内容，因此不能基于已有资料给出可靠回答。建议补充相关知识资产后再提问。",
-        citations: [],
-        provider: {
-          name: "Mock Answer Provider",
-          mode: "mock"
-        }
-      };
-    }
-
     const citations = createCitations(groundedResults);
     const evidence = groundedResults
       .slice(0, 2)
@@ -33,10 +28,10 @@ export const mockAnswerProvider: AnswerProvider = {
       .join(" ");
 
     return {
-      answer: `基于检索到的知识资产，可以回答：${evidence}`,
+      answer: `已找到可参考资料。当前未启用 DeepSeek，先给出本地摘要：${evidence}`,
       citations,
       provider: {
-        name: "Mock Answer Provider",
+        name: "本地摘要模式",
         mode: "mock"
       }
     };
@@ -46,39 +41,86 @@ export const mockAnswerProvider: AnswerProvider = {
 export async function answerQuestion(
   question: string,
   assets: KnowledgeAsset[],
+  options: AskOptions = {},
   provider: AnswerProvider = mockAnswerProvider
 ): Promise<AskResponse> {
   const normalizedQuestion = normalizeText(question);
   const results = searchKnowledgeAssets(question, assets);
+  const groundedResults = selectGroundedResults(results);
+  const gate = evaluateEvidenceGate(results);
+
+  if (!gate.passed) {
+    const answer =
+      "当前资料库没有足够依据回答这个问题。请先上传或新增与问题直接相关的参考资料，我不会基于猜测生成答案。";
+
+    return {
+      answer,
+      citations: [],
+      results,
+      trace: createTrace({
+        question,
+        normalizedQuestion,
+        results,
+        answer,
+        gateSummary: gate.summary,
+        modelSummary: "证据不足，未调用大模型。"
+      }),
+      provider: {
+        name: "严格证据门禁",
+        mode: "strict-no-evidence"
+      }
+    };
+  }
+
+  if (options.apiKey) {
+    const model = normalizeDeepSeekModel(options.model);
+    const answer = await generateDeepSeekAnswer({
+      apiKey: options.apiKey,
+      model,
+      question,
+      results: groundedResults
+    });
+
+    return {
+      answer,
+      citations: createCitations(groundedResults),
+      results,
+      trace: createTrace({
+        question,
+        normalizedQuestion,
+        results,
+        answer,
+        gateSummary: gate.summary,
+        modelSummary: `已调用 DeepSeek ${model}，仅基于 ${groundedResults.length} 条参考资料生成回答。`
+      }),
+      provider: {
+        name: "DeepSeek",
+        mode: "deepseek",
+        model
+      }
+    };
+  }
+
   const providerOutput = await provider.generateAnswer({
     question,
     normalizedQuestion,
-    results,
+    results: groundedResults,
     assets
-  });
-  const trace = createTrace({
-    question,
-    normalizedQuestion,
-    results,
-    answer: providerOutput.answer
   });
 
   return {
     answer: providerOutput.answer,
     citations: providerOutput.citations,
     results,
-    trace,
+    trace: createTrace({
+      question,
+      normalizedQuestion,
+      results,
+      answer: providerOutput.answer,
+      gateSummary: gate.summary,
+      modelSummary: `未配置 DeepSeek Key，使用本地摘要模式。默认模型为 ${DEFAULT_DEEPSEEK_MODEL}。`
+    }),
     provider: providerOutput.provider
-  };
-}
-
-export function createDeepSeekProviderBoundary(): AnswerProvider {
-  return {
-    async generateAnswer(): Promise<AnswerProviderOutput> {
-      throw new Error(
-        "DeepSeek provider is intentionally not enabled in this phase. Configure DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, and DEEPSEEK_MODEL before implementing the provider."
-      );
-    }
   };
 }
 
@@ -90,14 +132,33 @@ function createCitations(results: SearchResult[]): Citation[] {
   }));
 }
 
+function evaluateEvidenceGate(results: SearchResult[]): {
+  passed: boolean;
+  summary: string;
+} {
+  const topScore = results[0]?.score ?? 0;
+
+  if (topScore < MIN_EVIDENCE_SCORE) {
+    return {
+      passed: false,
+      summary: `最高相关度 ${topScore.toFixed(2)}，低于门槛 ${MIN_EVIDENCE_SCORE.toFixed(2)}。`
+    };
+  }
+
+  return {
+    passed: true,
+    summary: `最高相关度 ${topScore.toFixed(2)}，已达到门槛 ${MIN_EVIDENCE_SCORE.toFixed(2)}。`
+  };
+}
+
 function selectGroundedResults(results: SearchResult[]): SearchResult[] {
   const [topResult] = results;
 
-  if (!topResult) {
+  if (!topResult || topResult.score < MIN_EVIDENCE_SCORE) {
     return [];
   }
 
-  const minimumScore = Math.max(0.2, topResult.score * 0.5);
+  const minimumScore = Math.max(MIN_EVIDENCE_SCORE, topResult.score * 0.5);
 
   return results.filter((result) => result.score >= minimumScore);
 }
@@ -107,6 +168,8 @@ function createTrace(input: {
   normalizedQuestion: string;
   results: SearchResult[];
   answer: string;
+  gateSummary: string;
+  modelSummary: string;
 }): AgentTrace {
   const retrievedAssets = input.results.map((result) => ({
     assetId: result.assetId,
@@ -130,39 +193,33 @@ function createTrace(input: {
     steps: [
       {
         id: "query-normalization",
-        label: "Query normalization",
+        label: "问题标准化",
         status: "completed",
-        summary: `Normalized query: ${input.normalizedQuestion || "(empty)"}`
+        summary: `标准化结果：${input.normalizedQuestion || "空问题"}`
       },
       {
         id: "retrieval",
-        label: "Retrieval",
+        label: "资料检索",
         status: "completed",
         summary: hasResults
-          ? `Retrieved ${input.results.length} relevant asset(s).`
-          : "No relevant assets were retrieved."
+          ? `命中 ${input.results.length} 条候选资料。`
+          : "没有命中相关资料。"
       },
       {
-        id: "scoring",
-        label: "Scoring",
+        id: "evidence-gate",
+        label: "证据门禁",
         status: hasResults ? "completed" : "skipped",
-        summary: hasResults
-          ? scores
-              .map((score) => `${score.title}: ${score.score}`)
-              .join("; ")
-          : "Scoring skipped because retrieval returned no hits."
+        summary: input.gateSummary
       },
       {
-        id: "mock-answer-generation",
-        label: "Mock answer generation",
-        status: "completed",
-        summary: hasResults
-          ? "Generated answer from retrieved snippets and citations."
-          : "Generated no-evidence answer."
+        id: "model-generation",
+        label: "模型生成",
+        status: input.modelSummary.includes("未调用") ? "skipped" : "completed",
+        summary: input.modelSummary
       },
       {
         id: "final-answer",
-        label: "Final answer",
+        label: "最终回答",
         status: "completed",
         summary: input.answer
       }

@@ -63,15 +63,11 @@
    - UI 风格采用克制的企业 RAG 工作台：清晰分区、适中密度、低饱和中性色和少量状态色。
    - README 覆盖题目必答项、启动方式、技术取舍、DeepSeek 接入说明和后续迭代方向。
 
-## Phase documents
+## Follow-up documents
 
-- `docs/2026-06-16_phase-roadmap.md`: 阶段路线图和全局完成标准。
-- `docs/2026-06-16_phase-01_foundation.md`: 工程骨架与基础设计系统。
-- `docs/2026-06-16_phase-02_assets-api.md`: 知识资产数据层与 API。
-- `docs/2026-06-16_phase-03_retrieval.md`: 可解释检索链路。
-- `docs/2026-06-16_phase-04_agent-answer.md`: Agent 问答与 Provider 边界。
-- `docs/2026-06-16_phase-05_workbench-ui.md`: 工作台 UI 与交互打磨。
-- `docs/2026-06-16_phase-06_delivery.md`: 文档、验证与交付收口。
+- `docs/AssetMind中国化RAG升级设计.md`: 中国化、资料上传、DeepSeek 和液态玻璃 UI 升级设计文档。
+
+早期阶段文档已在升级中清理，保留本总体设计文档和升级设计文档作为长期上下文。
 
 ## Files and modules involved
 
@@ -92,7 +88,7 @@
 ## Rollback plan
 
 - 删除新增的 Next.js 工程文件、`data`、`app`、`components`、`lib`、`types`、`README.md` 等文件即可回退。
-- 不修改现有 `docs/knowledge_asset_agent_exam.md` 和 `AGENTS.md`，避免影响原始需求和工作规则。
+- 不修改现有 `docs/知识资产智能体笔试题.md` 和 `AGENTS.md`，避免影响原始需求和工作规则。
 
 ## Verification
 

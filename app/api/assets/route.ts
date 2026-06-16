@@ -31,7 +31,7 @@ export async function POST(
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ error: "Request body must be valid JSON." }, {
+    return NextResponse.json({ error: "请求体必须是有效 JSON。" }, {
       status: 400
     });
   }
@@ -59,5 +59,5 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function formatApiError(error: unknown): string {
-  return error instanceof Error ? error.message : "Unexpected server error.";
+  return error instanceof Error ? error.message : "资产接口异常。";
 }

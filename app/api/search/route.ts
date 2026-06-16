@@ -15,7 +15,7 @@ export async function POST(
     payload = await request.json();
   } catch {
     return NextResponse.json(
-      { error: "Request body must be valid JSON." },
+      { error: "请求体必须是有效 JSON。" },
       { status: 400 }
     );
   }
@@ -25,7 +25,7 @@ export async function POST(
     : "";
 
   if (!query) {
-    return NextResponse.json({ error: "Query is required." }, { status: 400 });
+    return NextResponse.json({ error: "请输入检索内容。" }, { status: 400 });
   }
 
   try {
@@ -46,5 +46,5 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function formatApiError(error: unknown): string {
-  return error instanceof Error ? error.message : "Unexpected server error.";
+  return error instanceof Error ? error.message : "检索接口异常。";
 }

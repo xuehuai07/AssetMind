@@ -1,6 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { CreateKnowledgeAssetInput, KnowledgeAsset } from "@/types/assets";
+import type {
+  CreateKnowledgeAssetInput,
+  KnowledgeAsset,
+  KnowledgeAssetSource
+} from "@/types/assets";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const ASSETS_FILE = path.join(
@@ -85,13 +89,14 @@ export function validateCreateAssetInput(
   const title = typeof input.title === "string" ? input.title.trim() : "";
   const content = typeof input.content === "string" ? input.content.trim() : "";
   const tags = normalizeTags(input.tags);
+  const source = normalizeSource(input.source);
 
   if (!title) {
-    return { ok: false, error: "Title is required." };
+    return { ok: false, error: "标题不能为空。" };
   }
 
   if (!content) {
-    return { ok: false, error: "Content is required." };
+    return { ok: false, error: "正文不能为空。" };
   }
 
   return {
@@ -99,7 +104,8 @@ export function validateCreateAssetInput(
     value: {
       title,
       content,
-      tags
+      tags,
+      source: source ?? { type: "manual" }
     }
   };
 }
@@ -136,7 +142,37 @@ function isKnowledgeAsset(value: unknown): value is KnowledgeAsset {
     typeof value.content === "string" &&
     Array.isArray(value.tags) &&
     value.tags.every((tag) => typeof tag === "string") &&
-    typeof value.createdAt === "string"
+    typeof value.createdAt === "string" &&
+    (value.source === undefined || isKnowledgeAssetSource(value.source))
+  );
+}
+
+function normalizeSource(value: unknown): KnowledgeAssetSource | undefined {
+  if (!isRecord(value) || value.type !== "upload") {
+    return undefined;
+  }
+
+  return {
+    type: "upload",
+    fileName: typeof value.fileName === "string" ? value.fileName : undefined,
+    mimeType: typeof value.mimeType === "string" ? value.mimeType : undefined,
+    size: typeof value.size === "number" ? value.size : undefined
+  };
+}
+
+function isKnowledgeAssetSource(value: unknown): value is KnowledgeAssetSource {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (value.type !== "manual" && value.type !== "upload") {
+    return false;
+  }
+
+  return (
+    (value.fileName === undefined || typeof value.fileName === "string") &&
+    (value.mimeType === undefined || typeof value.mimeType === "string") &&
+    (value.size === undefined || typeof value.size === "number")
   );
 }
 

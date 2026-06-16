@@ -10,7 +10,7 @@ export type Citation = {
 export type AgentTraceStep = {
   id: string;
   label: string;
-  status: "completed" | "skipped";
+  status: "completed" | "skipped" | "failed";
   summary: string;
 };
 
@@ -39,7 +39,8 @@ export type AskResponse = {
   trace: AgentTrace;
   provider: {
     name: string;
-    mode: "mock" | "deepseek-ready";
+    mode: "mock" | "deepseek" | "strict-no-evidence";
+    model?: string;
   };
 };
 
@@ -58,4 +59,9 @@ export type AnswerProviderOutput = {
 
 export type AnswerProvider = {
   generateAnswer(input: AnswerProviderInput): Promise<AnswerProviderOutput>;
+};
+
+export type AskOptions = {
+  apiKey?: string;
+  model?: string;
 };
