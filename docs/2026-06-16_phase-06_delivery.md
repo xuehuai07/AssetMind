@@ -69,10 +69,32 @@
 
 ## Risks
 
-- 当前目录不是 Git 仓库，无法使用 `git diff --check` 做最终 diff 检查。
+- 依赖链仍存在 npm audit 报告的 moderate 漏洞，自动修复路径会触发破坏性版本变更。
 - 如果依赖安装或网络异常，需记录未验证项和原因。
 - 收口阶段发现架构问题时，不应临时大改，应记录为后续迭代。
 
 ## Implementation result
 
-待完成后补充。
+已完成。
+
+- README 已补齐项目介绍、功能概览、本地启动、技术栈、目录结构、API、数据结构设计、检索实现、本地 JSON 取舍、DeepSeek 后续接入、真实向量库改造、多租户改造、真实 ToB 风险、未完成事项和后续迭代计划。
+- 总设计文档已回填 Implementation result。
+- Phase 01 至 Phase 06 的阶段文档均已回填实现结果或状态。
+- 最终自动检查：
+  - `npm run lint` 通过。
+  - `npm run build` 通过。
+  - `git diff --check` 通过。
+- 最终运行验收：
+  - 首页返回 200。
+  - `GET /api/assets` 返回 3 条初始资产。
+  - `POST /api/assets` 可新增资产。
+  - 新增后测试数据源资产数从 3 变为 4。
+  - 搜索 “AIOS 支持哪些能力” 顶部命中 “AIOS 平台介绍”。
+  - 搜索 “权限 控制 可观测性” 顶部命中 “Agent 工作流”。
+  - 搜索新增验收资产可命中新资产。
+  - 搜索无命中 query 返回空数组。
+  - 提问 “AIOS 支持哪些能力？” 返回引用 “AIOS 平台介绍”。
+  - 无命中提问返回无依据回答且引用为空。
+  - 空 title 新增和空 question 提问均返回 400。
+  - 验证过程使用测试 JSON 文件，正式 `data/knowledge-assets.json` 保持 3 条 seed 数据。
+- `npm audit --audit-level=moderate` 报告 Next 依赖链中的 PostCSS moderate 漏洞；自动修复需要破坏性 `npm audit fix --force`，本次未执行，已记录在 README。

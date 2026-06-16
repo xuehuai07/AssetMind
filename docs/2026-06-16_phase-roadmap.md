@@ -15,8 +15,8 @@
 | Phase 02 | `docs/2026-06-16_phase-02_assets-api.md` | 建立知识资产数据层和 API | 已完成：初始资产可读取，新增资产可持久化到 JSON |
 | Phase 03 | `docs/2026-06-16_phase-03_retrieval.md` | 实现可解释检索链路 | 已完成：搜索返回 top 3、score、snippet、matchedTerms |
 | Phase 04 | `docs/2026-06-16_phase-04_agent-answer.md` | 实现 Agent 问答和 Provider 边界 | 已完成：`/api/ask` 返回答案、引用和 Trace |
-| Phase 05 | `docs/2026-06-16_phase-05_workbench-ui.md` | 打磨完整工作台 UI 和交互 | 三栏工作台、新增面板、状态反馈完整 |
-| Phase 06 | `docs/2026-06-16_phase-06_delivery.md` | 文档、验证和交付收口 | README 完整，lint/build 通过，人工验收完成 |
+| Phase 05 | `docs/2026-06-16_phase-05_workbench-ui.md` | 打磨完整工作台 UI 和交互 | 已完成：三栏工作台、新增面板、状态反馈完整 |
+| Phase 06 | `docs/2026-06-16_phase-06_delivery.md` | 文档、验证和交付收口 | 已完成：README 完整，lint/build 通过，验收完成 |
 
 ## 建议执行顺序
 

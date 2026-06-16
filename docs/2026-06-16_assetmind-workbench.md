@@ -22,7 +22,7 @@
 - 不实现登录、权限、多租户隔离、审计日志和数据迁移。
 - 不实现文件上传、富文本编辑、资产编辑和资产删除。
 - 不把 DeepSeek API 作为必须依赖；本次只预留 Provider 接口和配置说明。
-- 不初始化 Git 仓库，遵循已确认的项目边界。
+- 不设计复杂发布流程；GitHub 上传按后续用户请求完成。
 
 ## Impact
 
@@ -87,7 +87,7 @@
 - 本地 JSON 文件写入在并发场景下不具备生产级一致性，只适合演示。
 - Mock Agent 可能被误解为真实模型能力，需要在 UI 或 README 中说明。
 - 中文分词采用轻量策略，召回能力有限；需要通过权重和片段展示提高可解释性。
-- 当前目录不是 Git 仓库，无法用 Git diff 做完整变更审查。
+- 依赖链存在 npm audit 报告的 moderate 漏洞，自动修复路径会触发破坏性版本变更。
 
 ## Rollback plan
 
@@ -105,7 +105,7 @@
   - 提问后展示回答、引用来源和 Agent Trace。
   - 无命中问题展示明确空态。
   - API 错误时前端有错误反馈。
-- 因不初始化 Git，无法运行有效的 `git diff --check`；改用构建检查和文件清单复核替代。
+- 运行 `git diff --check` 检查 whitespace 和 diff 基础质量。
 
 ## Acceptance criteria
 
@@ -118,4 +118,13 @@
 
 ## Implementation result
 
-待实现完成后补充。
+已完成到 Phase 06 交付收口。
+
+- 完成 Next.js App Router 工程，使用 React、TypeScript、Tailwind CSS 构建工作台。
+- 完成知识资产本地 JSON 存储、资产读取和新增 API。
+- 完成可解释检索链路，返回 top 3、score、snippet、matchedTerms。
+- 完成 Mock Agent 问答，返回 answer、citations、results、trace 和 provider 信息。
+- 完成三栏工作台 UI，覆盖资产列表、新增资产、搜索、问答、引用来源和 Agent Trace。
+- 完成 README，覆盖启动方式、技术取舍、数据结构、检索实现、向量库改造、多租户改造、DeepSeek 接入边界、真实 ToB 风险和未完成事项。
+- 最终验证通过：`npm run lint`、`npm run build`、`git diff --check`、页面 200、资产 API、搜索 API、问答 API、错误状态和无命中场景。
+- `npm audit --audit-level=moderate` 仍报告 Next 依赖链中的 PostCSS moderate 漏洞；自动修复需要破坏性 `--force`，本次未执行，已在 README 说明。

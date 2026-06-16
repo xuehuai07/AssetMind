@@ -74,4 +74,28 @@
 
 ## Implementation result
 
-待完成后补充。
+已完成。
+
+- 新增 `components/workbench.tsx`，将静态首页替换为可操作的三栏 RAG 工作台。
+- 左侧资产区展示资产数量、标签、资产列表，并提供新增资产入口。
+- 新增资产使用右侧抽屉面板，提交后调用 `POST /api/assets`，成功后立即更新本地列表。
+- 中间区域实现 Agent 提问、答案展示、引用来源、检索结果展示和独立搜索。
+- 右侧区域实现 Agent Trace，展示 query、步骤时间线、provider mode 和 scores。
+- 覆盖 loading、empty、error、no result、新增成功等状态。
+- 响应式布局采用桌面三栏、窄屏纵向堆叠。
+
+验证结果：
+
+- `npm run lint` 通过。
+- `npm run build` 通过。
+- `git diff --check` 通过。
+- 使用测试 JSON 文件启动 dev server，首页返回 200。
+- UI 依赖链路验证通过：新增资产后资产数从 3 变为 4，搜索 “UI 阶段验证” 顶部命中新资产。
+- 提问 “AIOS 支持哪些能力？” 返回引用 “AIOS 平台介绍”，Trace 包含 `query-normalization`、`retrieval`、`scoring`、`mock-answer-generation`、`final-answer`。
+- 验证过程未污染正式 `data/knowledge-assets.json`。
+
+自我审查：
+
+- 阶段边界符合 Phase 05：聚焦 UI 和交互，没有新增后端能力、资产编辑删除、真实 DeepSeek 或复杂状态管理。
+- 首屏是可操作工作台，不是营销页；视觉保持企业工作台风格，避免过度装饰。
+- Trace 信息密度可控，但真实浏览器视觉验收仍建议由用户打开本地页面确认。
