@@ -72,4 +72,26 @@
 
 ## Implementation result
 
-待完成后补充。
+已完成。
+
+- 新增 `Citation`、`AgentTraceStep`、`AgentTrace`、`AskResponse`、`AnswerProvider` 等 Agent 类型。
+- 新增 `MockAnswerProvider`，基于检索结果生成回答；无命中时返回明确的无依据提示。
+- 新增 `POST /api/ask`，串联资产读取、检索、Mock 回答、引用和 Trace。
+- Trace 包含 `query-normalization`、`retrieval`、`scoring`、`mock-answer-generation`、`final-answer` 五个步骤。
+- 预留 DeepSeek Provider 边界，README 已说明 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` 和 OpenAI 兼容接入思路。
+- Agent 引用只使用高置信检索结果，避免把弱命中作为答案依据。
+
+验证结果：
+
+- `npm run lint` 通过。
+- `npm run build` 通过。
+- 提问 “AIOS 支持哪些能力？” 返回基于 “AIOS 平台介绍” 的回答，引用来源为 “AIOS 平台介绍”。
+- 提问 “完全不存在的火星天气” 返回无足够依据提示，引用为空。
+- Trace 的 `finalAnswer` 与 API 顶层 `answer` 一致。
+- 空 question 返回 400。
+
+自我审查：
+
+- 阶段边界符合 Phase 04：实现 Agent 问答 API 和 Provider 边界，没有接入真实 DeepSeek，也没有实现流式输出或多轮记忆。
+- Trace 展示的是系统步骤和检索元数据，不暴露模型内部推理。
+- Mock 回答仍偏模板化，后续 Phase 05 需要通过 UI 清晰标注 provider/mode，Phase 06 需要在 README 中解释其演示定位。

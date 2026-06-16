@@ -69,4 +69,24 @@
 
 ## Implementation result
 
-待完成后补充。
+已完成。
+
+- 新增 `SearchResult` 类型，包含 `assetId`、`title`、`snippet`、`score`、`matchedTerms`。
+- 新增 `lib/retrieval.ts`，实现 query normalization、轻量 tokenization、标题/标签/正文加权评分、snippet 生成和 top 3 排序。
+- 新增 `POST /api/search`，输入 `{ query: string }`，成功返回 `{ data: SearchResult[] }`，空 query 返回 400。
+- tokenization 优先保留可读业务词，避免把整段中文 query 或过多短 n-gram 暴露到 matchedTerms。
+
+验证结果：
+
+- `npm run lint` 通过。
+- `npm run build` 通过。
+- 搜索 “AIOS 支持哪些能力” 顶部命中 “AIOS 平台介绍”，matchedTerms 为 `aios|支持`。
+- 搜索 “权限 控制 可观测性” 顶部命中 “Agent 工作流”，matchedTerms 为 `可观测性|权限|控制`。
+- 搜索 “客户案例 产品说明” 顶部命中 “数字资产知识库”，matchedTerms 为 `客户案例|产品说明`。
+- 搜索 “完全不存在的火星天气” 返回空数组。
+
+自我审查：
+
+- 阶段边界符合 Phase 03：只实现检索逻辑和 search API，没有实现 Agent 回答。
+- 检索算法不是语义检索，但 score、snippet 和 matchedTerms 能解释为什么命中。
+- 中文分词仍是轻量策略，后续 README 需要明确真实向量库或混合检索的改造方向。
